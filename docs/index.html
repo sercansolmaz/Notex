@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#6366f1" />
+  <title>Notex</title>
+  <link rel="manifest" href="./manifest.webmanifest" />
+  <link rel="icon" href="./icons/icon-192.png" />
+  <link rel="apple-touch-icon" href="./icons/icon-192.png" />
+  <link rel="stylesheet" href="./css/style.css" />
+  <script>
+    // Apply saved theme before paint (no flash).
+    const t = localStorage.getItem('notex.theme');
+    if (t) document.documentElement.dataset.theme = t;
+  </script>
+</head>
+<body>
+  <!-- Lock / unlock screen (master password gate) -->
+  <div id="lock" class="lock">
+    <div class="lock-card">
+      <img class="lock-logo" src="./icons/icon-192.png" alt="Notex" width="72" height="72" />
+      <h1>Notex</h1>
+      <p id="lock-sub" class="lock-sub">Kasanızı açmak için ana parolanızı girin.</p>
+      <form id="lock-form" autocomplete="off">
+        <input id="lock-pass" type="password" placeholder="Ana parola" autocomplete="current-password" />
+        <input id="lock-pass2" type="password" placeholder="Parolayı doğrula" autocomplete="new-password" hidden />
+        <button id="lock-btn" type="submit" class="primary">Aç</button>
+      </form>
+      <p id="lock-err" class="lock-err"></p>
+      <p class="lock-note">🔐 Uçtan uca şifreli · parola yalnızca sizde saklanır · sıfır-bilgi</p>
+      <p id="lock-warn" class="lock-warn" hidden>⚠️ Parolanızı unutursanız notlar kurtarılamaz.</p>
+    </div>
+  </div>
+
+  <div id="app" hidden>
+    <!-- Sidebar -->
+    <aside id="sidebar">
+      <div class="side-head">
+        <span class="brand">📝 Notex</span>
+        <button id="btn-new" class="primary" title="Yeni not (⌘/Ctrl+N)">+ Yeni</button>
+      </div>
+
+      <div class="search-wrap">
+        <input id="search" type="search" placeholder="Ara… (⌘/Ctrl+F)" autocomplete="off" />
+      </div>
+
+      <nav class="filters">
+        <button class="filter active" data-view="all">Tüm Notlar</button>
+        <button class="filter" data-view="favorites">★ Favoriler</button>
+        <button class="filter" data-view="trash">🗑 Çöp</button>
+      </nav>
+
+      <div class="nav-section">
+        <div class="nav-head">
+          <span>DEFTERLER</span>
+          <button id="add-notebook" class="nav-add" title="Yeni defter">+</button>
+        </div>
+        <ul id="notebook-list" class="nav-list"></ul>
+        <p id="nb-empty" class="nav-empty">Defter yok</p>
+      </div>
+
+      <div class="nav-section">
+        <div class="nav-head">
+          <span>ETİKETLER</span>
+          <button id="add-tag" class="nav-add" title="Yeni etiket">+</button>
+        </div>
+        <ul id="tag-list" class="nav-list"></ul>
+        <p id="tag-empty" class="nav-empty">Etiket yok</p>
+      </div>
+
+      <ul id="note-list"></ul>
+
+      <div class="side-foot">
+        <button id="btn-theme" title="Tema değiştir">🌓</button>
+        <button id="btn-lock" title="Kasayı kilitle">🔒</button>
+        <span id="count" class="muted"></span>
+      </div>
+    </aside>
+
+    <!-- Editor -->
+    <main id="editor">
+      <div id="empty-state" class="empty">
+        <div class="empty-icon">📝</div>
+        <p>Bir not seçin veya <strong>+ Yeni</strong> ile başlayın.</p>
+      </div>
+
+      <section id="editor-pane" hidden>
+        <div class="editor-bar">
+          <input id="title" class="title-input" placeholder="Başlık" />
+          <div class="bar-actions">
+            <button id="btn-format" title="Markdown ↔ Zengin metin">M↓ Markdown</button>
+            <button id="btn-fav" title="Favori">☆</button>
+            <button id="btn-mode" title="Önizleme (⌘/Ctrl+E)">👁 Önizle</button>
+            <button id="btn-trash" title="Çöpe taşı">🗑</button>
+            <button id="btn-restore" title="Geri yükle" hidden>↩ Geri Yükle</button>
+            <button id="btn-delete" title="Kalıcı sil" hidden>✕ Kalıcı Sil</button>
+          </div>
+        </div>
+
+        <!-- Notebook + tags for the current note -->
+        <div id="meta-bar" class="meta-bar">
+          <label class="meta-nb">
+            <select id="note-notebook"><option value="">📁 Defter yok</option></select>
+          </label>
+          <div id="note-tags" class="note-tags"></div>
+          <button id="add-note-tag" class="meta-addtag">+ Etiket</button>
+        </div>
+
+        <!-- Rich-text toolbar (shown only for rich notes) -->
+        <div id="rich-toolbar" class="rich-toolbar" hidden>
+          <button data-cmd="bold" title="Kalın"><b>B</b></button>
+          <button data-cmd="italic" title="İtalik"><i>I</i></button>
+          <button data-cmd="underline" title="Altı çizili"><u>U</u></button>
+          <button data-cmd="strikeThrough" title="Üstü çizili"><s>S</s></button>
+          <span class="tb-sep"></span>
+          <button data-block="H1" title="Başlık 1">H1</button>
+          <button data-block="H2" title="Başlık 2">H2</button>
+          <button data-block="P" title="Paragraf">¶</button>
+          <span class="tb-sep"></span>
+          <button data-cmd="insertUnorderedList" title="Madde listesi">•</button>
+          <button data-cmd="insertOrderedList" title="Numaralı liste">1.</button>
+          <button data-block="BLOCKQUOTE" title="Alıntı">❝</button>
+          <button data-block="PRE" title="Kod bloğu">&lt;/&gt;</button>
+        </div>
+
+        <div class="editor-body" data-mode="edit">
+          <textarea id="body" spellcheck="false"
+            placeholder="Markdown ile yazın…  **kalın**, *italik*, # başlık, - [ ] görev, [[bağlantı]]"></textarea>
+          <div id="rich" class="rich markdown" contenteditable="true" spellcheck="false"
+            data-placeholder="Zengin metinle yazın… (araç çubuğundan biçimlendirin)" hidden></div>
+          <div id="preview" class="preview markdown"></div>
+        </div>
+
+        <div class="status-bar">
+          <span id="words" class="muted"></span>
+          <span id="saved" class="muted"></span>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script type="module" src="./js/app.js"></script>
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js').catch(() => {}));
+    }
+  </script>
+</body>
+</html>
