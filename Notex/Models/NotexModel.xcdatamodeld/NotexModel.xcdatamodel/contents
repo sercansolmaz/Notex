@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<model type="com.apple.IDECoreDataModeler.DataModel" documentVersion="1.0" lastSavedToolsVersion="22269" systemVersion="23A344" minimumToolsVersion="Automatic" sourceLanguage="Swift" userDefinedModelVersionIdentifier="">
+    <entity name="Note" representedClassName="Note" codeGenerationType="class" syncable="YES">
+        <attribute name="content" optional="YES" attributeType="Binary"/>
+        <attribute name="createdAt" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
+        <attribute name="isArchived" optional="YES" attributeType="Boolean" defaultValueString="NO" usesScalarValueType="YES"/>
+        <attribute name="isFavorite" optional="YES" attributeType="Boolean" defaultValueString="NO" usesScalarValueType="YES"/>
+        <attribute name="isPinned" optional="YES" attributeType="Boolean" defaultValueString="NO" usesScalarValueType="YES"/>
+        <attribute name="isTrashed" optional="YES" attributeType="Boolean" defaultValueString="NO" usesScalarValueType="YES"/>
+        <attribute name="plainText" optional="YES" attributeType="String"/>
+        <attribute name="title" optional="YES" attributeType="String"/>
+        <attribute name="updatedAt" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
+        <attribute name="uuid" optional="YES" attributeType="String"/>
+        <relationship name="incomingLinks" optional="YES" toMany="YES" deletionRule="Cascade" destinationEntity="NoteLink" inverseName="dstNote" inverseEntity="NoteLink"/>
+        <relationship name="noteTags" optional="YES" toMany="YES" deletionRule="Cascade" destinationEntity="NoteTag" inverseName="note" inverseEntity="NoteTag"/>
+        <relationship name="notebook" optional="YES" maxCount="1" deletionRule="Nullify" destinationEntity="Notebook" inverseName="notes" inverseEntity="Notebook"/>
+        <relationship name="outgoingLinks" optional="YES" toMany="YES" deletionRule="Cascade" destinationEntity="NoteLink" inverseName="srcNote" inverseEntity="NoteLink"/>
+    </entity>
+    <entity name="NoteLink" representedClassName="NoteLink" codeGenerationType="class" syncable="YES">
+        <attribute name="createdAt" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
+        <attribute name="linkText" optional="YES" attributeType="String"/>
+        <relationship name="dstNote" optional="YES" maxCount="1" deletionRule="Nullify" destinationEntity="Note" inverseName="incomingLinks" inverseEntity="Note"/>
+        <relationship name="srcNote" optional="YES" maxCount="1" deletionRule="Nullify" destinationEntity="Note" inverseName="outgoingLinks" inverseEntity="Note"/>
+    </entity>
+    <entity name="NoteTag" representedClassName="NoteTag" codeGenerationType="class" syncable="YES">
+        <relationship name="note" optional="YES" maxCount="1" deletionRule="Nullify" destinationEntity="Note" inverseName="noteTags" inverseEntity="Note"/>
+        <relationship name="tag" optional="YES" maxCount="1" deletionRule="Nullify" destinationEntity="Tag" inverseName="noteTags" inverseEntity="Tag"/>
+    </entity>
+    <entity name="Notebook" representedClassName="Notebook" codeGenerationType="class" syncable="YES">
+        <attribute name="createdAt" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
+        <attribute name="icon" optional="YES" attributeType="String"/>
+        <attribute name="name" optional="YES" attributeType="String"/>
+        <attribute name="updatedAt" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
+        <relationship name="children" optional="YES" toMany="YES" deletionRule="Cascade" destinationEntity="Notebook" inverseName="parent" inverseEntity="Notebook"/>
+        <relationship name="notes" optional="YES" toMany="YES" deletionRule="Cascade" destinationEntity="Note" inverseName="notebook" inverseEntity="Note"/>
+        <relationship name="parent" optional="YES" maxCount="1" deletionRule="Nullify" destinationEntity="Notebook" inverseName="children" inverseEntity="Notebook"/>
+    </entity>
+    <entity name="Tag" representedClassName="Tag" codeGenerationType="class" syncable="YES">
+        <attribute name="color" optional="YES" attributeType="String"/>
+        <attribute name="createdAt" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
+        <attribute name="name" optional="YES" attributeType="String"/>
+        <relationship name="noteTags" optional="YES" toMany="YES" deletionRule="Cascade" destinationEntity="NoteTag" inverseName="tag" inverseEntity="NoteTag"/>
+    </entity>
+</model>

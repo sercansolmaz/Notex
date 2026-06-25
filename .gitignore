@@ -1,0 +1,33 @@
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Xcode
+build/
+DerivedData/
+*.xcuserstate
+*.xcscmblueprint
+*.xccheckout
+xcuserdata/
+*.moved-aside
+*.hmap
+*.ipa
+*.dSYM.zip
+
+# Swift Package Manager
+.build/
+Package.resolved
+
+# CocoaPods (if used in future)
+Pods/
+
+# Project specifics
+Notex/Notex.entitlements.bak
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+search.db
+
+# Attachments (user data)
+~/Library/Application Support/Notex/attachments/
