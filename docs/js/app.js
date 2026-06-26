@@ -656,6 +656,25 @@ async function attemptUnlock(e) {
   }
 }
 
+// ── Encryption-key cache (ask the 2nd password only periodically) ──
+const KEY_CACHE_DAYS = 30;
+async function cacheEncKey(email, key) {
+  try {
+    const keyB64 = await cloud.exportKeyB64(key);
+    localStorage.setItem('notex.keyCache', JSON.stringify({
+      email, keyB64, expiresAt: Date.now() + KEY_CACHE_DAYS * 86400000,
+    }));
+  } catch { /* caching is best-effort */ }
+}
+async function getCachedKey(email) {
+  try {
+    const c = JSON.parse(localStorage.getItem('notex.keyCache') || 'null');
+    if (!c || c.email !== email || Date.now() > c.expiresAt) return null;
+    return await cloud.importKeyB64(c.keyB64);
+  } catch { return null; }
+}
+function clearKeyCache() { localStorage.removeItem('notex.keyCache'); }
+
 // ── Cloud account: recoverable login (account password) + encryption password ──
 function setAuthMode(mode) {
   authMode = mode;
@@ -664,6 +683,9 @@ function setAuthMode(mode) {
   $('#auth-enc2').hidden = mode !== 'register';
   $('#auth-warn').hidden = mode !== 'register';
   $('#auth-btn').textContent = mode === 'register' ? 'Kayıt Ol' : 'Giriş Yap';
+  $('#auth-enc').placeholder = mode === 'register'
+    ? 'Şifreleme parolası (notları korur)'
+    : 'Şifreleme parolası (ilk giriş / periyodik)';
   const msg = $('#auth-msg'); msg.textContent = ''; msg.classList.remove('ok');
 }
 
@@ -705,8 +727,13 @@ async function submitAuth(e) {
           : r.error;
         return;
       }
-      const encKey = await cloud.unlockEnc(encPass, r.encSalt, r.encVerifier);
-      if (!encKey) { msg.textContent = 'Şifreleme parolası hatalı.'; return; }
+      // Periodic 2nd password: reuse the on-device cached key while it's valid.
+      let encKey = await getCachedKey(email);
+      if (!encKey) {
+        if (!encPass) { msg.textContent = 'Şifreleme parolası gerekli (ilk giriş veya süre doldu).'; return; }
+        encKey = await cloud.unlockEnc(encPass, r.encSalt, r.encVerifier);
+        if (!encKey) { msg.textContent = 'Şifreleme parolası hatalı.'; return; }
+      }
       await enterCloud({ token: r.token, userId: r.userId, email, encKey });
     }
   } catch (ex) {
@@ -729,6 +756,7 @@ async function forgotPassword() {
 async function enterCloud({ token, userId, email, encKey }) {
   cloudSession = { token, userId, email };
   localStorage.setItem('notex.lastEmail', email);
+  await cacheEncKey(email, encKey); // remember the key so the 2nd password is periodic
   vault.setKey(encKey);
   $('#auth-pass').value = ''; $('#auth-enc').value = ''; $('#auth-enc2').value = '';
   await main();

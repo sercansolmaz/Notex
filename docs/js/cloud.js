@@ -22,10 +22,17 @@ const unb64 = (s) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
 // ── Encryption-key derivation (2nd password) ──
 async function deriveEncKey(password, salt) {
   const base = await crypto.subtle.importKey('raw', enc.encode(password), 'PBKDF2', false, ['deriveKey']);
+  // extractable:true so the key can be cached on-device for the "ask periodically"
+  // flow (still never leaves the device / never reaches the server).
   return crypto.subtle.deriveKey(
     { name: 'PBKDF2', salt, iterations: PBKDF2_ITER, hash: 'SHA-256' },
-    base, { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']
+    base, { name: 'AES-GCM', length: 256 }, true, ['encrypt', 'decrypt']
   );
+}
+
+async function exportKeyB64(key) { return b64(await crypto.subtle.exportKey('raw', key)); }
+async function importKeyB64(keyB64) {
+  return crypto.subtle.importKey('raw', unb64(keyB64), { name: 'AES-GCM' }, true, ['encrypt', 'decrypt']);
 }
 async function encStr(key, plain) {
   const iv = crypto.getRandomValues(new Uint8Array(12));
@@ -52,6 +59,8 @@ function authErr(d) {
 export const cloud = {
   jwtSub,
   deriveEncKey,
+  exportKeyB64,
+  importKeyB64,
 
   /** Register: standard account + stash the encryption salt/verifier in metadata. */
   async signup(email, accountPassword, encPassword) {
