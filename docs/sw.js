@@ -8,6 +8,7 @@ const ASSETS = [
   './js/db.js',
   './js/markdown.js',
   './js/vault.js',
+  './js/cloud.js',
   './manifest.webmanifest',
   './icons/icon-192.png',
   './icons/icon-512.png',

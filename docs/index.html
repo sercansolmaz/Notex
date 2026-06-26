@@ -21,15 +21,38 @@
     <div class="lock-card">
       <img class="lock-logo" src="./icons/icon-192.png" alt="Notex" width="72" height="72" />
       <h1>Notex</h1>
-      <p id="lock-sub" class="lock-sub">Kasanızı açmak için ana parolanızı girin.</p>
-      <form id="lock-form" autocomplete="off">
-        <input id="lock-pass" type="password" placeholder="Ana parola" autocomplete="current-password" />
-        <input id="lock-pass2" type="password" placeholder="Parolayı doğrula" autocomplete="new-password" hidden />
-        <button id="lock-btn" type="submit" class="primary">Aç</button>
-      </form>
-      <p id="lock-err" class="lock-err"></p>
-      <p class="lock-note">🔐 Uçtan uca şifreli · parola yalnızca sizde saklanır · sıfır-bilgi</p>
-      <p id="lock-warn" class="lock-warn" hidden>⚠️ Parolanızı unutursanız notlar kurtarılamaz.</p>
+
+      <!-- Cloud account (email + master password) -->
+      <div id="auth-cloud">
+        <div class="auth-tabs">
+          <button id="tab-login" class="auth-tab active" type="button">Giriş Yap</button>
+          <button id="tab-register" class="auth-tab" type="button">Kayıt Ol</button>
+        </div>
+        <form id="auth-form" autocomplete="on">
+          <input id="auth-email" type="email" placeholder="E-posta" autocomplete="email" />
+          <input id="auth-pass" type="password" placeholder="Ana parola" autocomplete="current-password" />
+          <input id="auth-pass2" type="password" placeholder="Parolayı doğrula" autocomplete="new-password" hidden />
+          <button id="auth-btn" type="submit" class="primary">Giriş Yap</button>
+        </form>
+        <p id="auth-msg" class="lock-err"></p>
+        <p class="lock-note">🔐 Uçtan uca şifreli · parolan yalnız sende · sıfır-bilgi</p>
+        <p id="auth-warn" class="lock-warn" hidden>⚠️ Parolanı unutursan notların kurtarılamaz (sıfır-bilgi).</p>
+        <p class="auth-switch"><a id="use-local" href="#">Hesapsız, yalnız bu cihazda kullan →</a></p>
+      </div>
+
+      <!-- Local-only vault (no account, no sync) -->
+      <div id="auth-local" hidden>
+        <p id="lock-sub" class="lock-sub">Kasanızı açmak için ana parolanızı girin.</p>
+        <form id="lock-form" autocomplete="off">
+          <input id="lock-pass" type="password" placeholder="Ana parola" autocomplete="current-password" />
+          <input id="lock-pass2" type="password" placeholder="Parolayı doğrula" autocomplete="new-password" hidden />
+          <button id="lock-btn" type="submit" class="primary">Aç</button>
+        </form>
+        <p id="lock-err" class="lock-err"></p>
+        <p class="lock-note">🔐 Yalnız bu cihaz · senkron yok</p>
+        <p id="lock-warn" class="lock-warn" hidden>⚠️ Parolanızı unutursanız notlar kurtarılamaz.</p>
+        <p class="auth-switch"><a id="use-cloud" href="#">← Bulut hesabıyla giriş</a></p>
+      </div>
     </div>
   </div>
 

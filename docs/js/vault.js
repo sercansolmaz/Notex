@@ -46,6 +46,11 @@ export const vault = {
   isUnlocked() { return !!_key; },
   lock() { _key = null; },
 
+  /** Inject an externally derived AES-GCM key (e.g. from cloud login's
+   *  password→key derivation) so encryptNote/decryptNote use the same crypto. */
+  setKey(key) { _key = key; },
+  hasKey() { return !!_key; },
+
   /** First-time setup: create the vault from a new master password. */
   async setup(password) {
     const salt = crypto.getRandomValues(new Uint8Array(16));

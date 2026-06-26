@@ -68,6 +68,16 @@ body {
 .lock-err { color: var(--danger); font-size: 12px; min-height: 16px; margin: 10px 0 0; }
 .lock-note { color: var(--muted); font-size: 11px; margin: 14px 0 0; }
 .lock-warn { color: var(--danger); font-size: 11px; margin: 6px 0 0; }
+.auth-tabs { display: flex; gap: 6px; margin: 10px 0 14px; }
+.auth-tab {
+  flex: 1; padding: 8px; font-size: 13px; font-weight: 600; border-radius: 9px;
+  border: 1px solid var(--border); background: var(--surface-2); color: var(--muted);
+}
+.auth-tab.active { background: var(--accent); color: #fff; border-color: transparent; }
+.auth-switch { margin: 14px 0 0; font-size: 12px; }
+.auth-switch a { color: var(--accent); text-decoration: none; }
+.auth-switch a:hover { text-decoration: underline; }
+#auth-msg.ok { color: var(--accent); }
 
 /* ── Sidebar ── */
 #sidebar {

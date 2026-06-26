@@ -1,6 +1,10 @@
 import { db } from './db.js';
 import { renderMarkdown, htmlToMarkdown } from './markdown.js';
 import { vault } from './vault.js';
+import { cloud } from './cloud.js';
+
+let cloudSession = null; // { token, userId, email } when signed into a cloud account
+let authMode = 'login';  // 'login' | 'register'
 
 const stripTags = (s) => (s || '').replace(/<[^>]+>/g, ' ');
 
@@ -652,9 +656,95 @@ async function attemptUnlock(e) {
   }
 }
 
+// ── Cloud account (email + master password, zero-knowledge) ──
+function setAuthMode(mode) {
+  authMode = mode;
+  $('#tab-login').classList.toggle('active', mode === 'login');
+  $('#tab-register').classList.toggle('active', mode === 'register');
+  $('#auth-pass2').hidden = mode !== 'register';
+  $('#auth-warn').hidden = mode !== 'register';
+  $('#auth-btn').textContent = mode === 'register' ? 'Kayıt Ol' : 'Giriş Yap';
+  const msg = $('#auth-msg'); msg.textContent = ''; msg.classList.remove('ok');
+}
+
+async function submitAuth(e) {
+  if (e) e.preventDefault();
+  const email = $('#auth-email').value.trim();
+  const pass = $('#auth-pass').value;
+  const msg = $('#auth-msg');
+  const btn = $('#auth-btn');
+  msg.textContent = ''; msg.classList.remove('ok');
+
+  if (!/.+@.+\..+/.test(email)) { msg.textContent = 'Geçerli bir e-posta girin.'; return; }
+  if (pass.length < 8) { msg.textContent = 'Parola en az 8 karakter olmalı.'; return; }
+  if (authMode === 'register' && pass !== $('#auth-pass2').value) {
+    msg.textContent = 'Parolalar eşleşmiyor.'; return;
+  }
+
+  const label = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = authMode === 'register' ? 'Kayıt olunuyor…' : 'Giriş yapılıyor…';
+  try {
+    if (authMode === 'register') {
+      const r = await cloud.signup(email, pass);
+      if (!r.ok) { msg.textContent = r.error; return; }
+      if (r.needsConfirm) {
+        msg.classList.add('ok');
+        msg.textContent = '✓ Onay e-postası gönderildi. E-postanı onayla, sonra giriş yap.';
+        setAuthMode('login');
+        $('#auth-pass').value = ''; $('#auth-pass2').value = '';
+        return;
+      }
+      await enterCloud({ token: r.session.access_token, userId: cloud.jwtSub(r.session.access_token), email, encKey: r.encKey });
+    } else {
+      const r = await cloud.login(email, pass);
+      if (!r.ok) {
+        msg.textContent = /confirm/i.test(r.error)
+          ? 'Önce e-postanı onaylaman gerekiyor (gelen kutunu kontrol et).'
+          : r.error;
+        return;
+      }
+      await enterCloud({ token: r.token, userId: r.userId, email, encKey: r.encKey });
+    }
+  } catch (ex) {
+    msg.textContent = 'Hata: ' + (ex && ex.message ? ex.message : ex);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = label;
+  }
+}
+
+async function enterCloud({ token, userId, email, encKey }) {
+  cloudSession = { token, userId, email };
+  localStorage.setItem('notex.lastEmail', email);
+  vault.setKey(encKey);
+  $('#auth-pass').value = ''; $('#auth-pass2').value = '';
+  await main();
+  // Encrypted sync (pull + push) is wired in the next step.
+}
+
 function boot() {
+  // Local-only vault wiring (existing)
   $('#lock-form').addEventListener('submit', attemptUnlock);
-  showLock();
+  // Cloud auth wiring
+  $('#tab-login').addEventListener('click', () => setAuthMode('login'));
+  $('#tab-register').addEventListener('click', () => setAuthMode('register'));
+  $('#auth-form').addEventListener('submit', submitAuth);
+  $('#use-local').addEventListener('click', (e) => {
+    e.preventDefault();
+    $('#auth-cloud').hidden = true; $('#auth-local').hidden = false; showLock();
+  });
+  $('#use-cloud').addEventListener('click', (e) => {
+    e.preventDefault();
+    $('#auth-local').hidden = true; $('#auth-cloud').hidden = false; $('#auth-email').focus();
+  });
+
+  // Cloud login is the default screen.
+  setAuthMode('login');
+  const lastEmail = localStorage.getItem('notex.lastEmail');
+  if (lastEmail) $('#auth-email').value = lastEmail;
+  $('#lock').style.display = 'flex';
+  ($('#auth-email').value ? $('#auth-pass') : $('#auth-email')).focus();
 }
 
 boot();
