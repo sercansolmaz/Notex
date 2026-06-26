@@ -1,88 +1,118 @@
-// Zero-knowledge multi-user cloud sync via Supabase — fetch only, no SDK.
+// Recoverable account + separate encryption password (Standard Notes / Joplin model).
 //
-// One master password, split client-side into two independent values:
-//   • authSecret → sent to Supabase as the login "password" (server can verify
-//     identity but cannot decrypt anything)
-//   • encKey     → AES-GCM key, NEVER leaves the device, encrypts every item
-// Supabase therefore stores only ciphertext; the operator cannot read notes.
+//   • Account password  → standard Supabase email/password login. Recoverable
+//     via Supabase's built-in "reset password" email. Account access is never lost.
+//   • Encryption password (2nd) → derives the AES-256-GCM key that encrypts ALL
+//     notes. NEVER sent to the server, so notes stay ciphertext (operator can't
+//     read them). Survives an account-password reset. Forgetting it loses notes.
+//
+// The encryption salt + a verifier are kept in the account's user_metadata
+// (not secret) so the key can be re-derived on any device. No SDK, fetch only.
 
 const SUPABASE_URL = 'https://giifusgpxnhviqqdzdfn.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_2LKzETymKX7Lna7vNTVmmg_MUbdoJYc';
 const PBKDF2_ITER = 200000;
+const VERIFIER = 'NOTEX_ENC_OK';
 
 const enc = new TextEncoder();
+const dec = new TextDecoder();
 const b64 = (buf) => btoa(String.fromCharCode(...new Uint8Array(buf)));
+const unb64 = (s) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
 
-// ── Key derivation (password → {encKey, authSecret}) ──
-async function deriveKeys(email, password) {
-  const e = email.trim().toLowerCase();
-  const baseKey = await crypto.subtle.importKey('raw', enc.encode(password), 'PBKDF2', false, ['deriveBits']);
-  // Master key: PBKDF2 with the email as salt (deterministic on any device).
-  const mkBits = await crypto.subtle.deriveBits(
-    { name: 'PBKDF2', salt: enc.encode('notex:' + e), iterations: PBKDF2_ITER, hash: 'SHA-256' },
-    baseKey, 256
+// ── Encryption-key derivation (2nd password) ──
+async function deriveEncKey(password, salt) {
+  const base = await crypto.subtle.importKey('raw', enc.encode(password), 'PBKDF2', false, ['deriveKey']);
+  return crypto.subtle.deriveKey(
+    { name: 'PBKDF2', salt, iterations: PBKDF2_ITER, hash: 'SHA-256' },
+    base, { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']
   );
-  const mk = await crypto.subtle.importKey('raw', mkBits, 'HKDF', false, ['deriveBits']);
-  // Two domain-separated outputs from the master key.
-  const hkdf = (info) => crypto.subtle.deriveBits(
-    { name: 'HKDF', hash: 'SHA-256', salt: new Uint8Array(0), info: enc.encode(info) }, mk, 256
-  );
-  const encBits = await hkdf('notex-enc');
-  const authBits = await hkdf('notex-auth');
-  const encKey = await crypto.subtle.importKey('raw', encBits, { name: 'AES-GCM' }, false, ['encrypt', 'decrypt']);
-  return { encKey, authSecret: b64(authBits) };
+}
+async function encStr(key, plain) {
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const ct = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, enc.encode(plain));
+  return b64(iv) + ':' + b64(ct);
+}
+async function decStr(key, payload) {
+  const [ivB, ctB] = payload.split(':');
+  const pt = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: unb64(ivB) }, key, unb64(ctB));
+  return dec.decode(pt);
 }
 
-// ── REST helpers ──
 function jwtSub(token) {
-  try {
-    const p = JSON.parse(atob(token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')));
-    return p.sub;
-  } catch { return null; }
+  try { return JSON.parse(atob(token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/'))).sub; }
+  catch { return null; }
 }
-
 function restHeaders(token) {
-  return {
-    apikey: SUPABASE_KEY,
-    Authorization: `Bearer ${token}`,
-    'Content-Type': 'application/json',
-  };
+  return { apikey: SUPABASE_KEY, Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
+}
+function authErr(d) {
+  return d.msg || d.error_description || d.error || (d.code ? `Hata: ${d.code}` : 'İşlem başarısız');
 }
 
 export const cloud = {
-  deriveKeys,
   jwtSub,
+  deriveEncKey,
 
-  /** Register a new account. Returns { ok, error }. */
-  async signup(email, password) {
-    const { encKey, authSecret } = await deriveKeys(email, password);
+  /** Register: standard account + stash the encryption salt/verifier in metadata. */
+  async signup(email, accountPassword, encPassword) {
+    const salt = crypto.getRandomValues(new Uint8Array(16));
+    const key = await deriveEncKey(encPassword, salt);
+    const verifier = await encStr(key, VERIFIER);
     const r = await fetch(`${SUPABASE_URL}/auth/v1/signup`, {
       method: 'POST',
       headers: { apikey: SUPABASE_KEY, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: email.trim().toLowerCase(), password: authSecret }),
+      body: JSON.stringify({
+        email: email.trim().toLowerCase(),
+        password: accountPassword,
+        data: { encSalt: b64(salt), encVerifier: verifier },
+      }),
     });
-    const data = await r.json();
-    if (!r.ok) return { ok: false, error: data.msg || data.error_description || data.error || 'Kayıt başarısız' };
-    return { ok: true, encKey, session: data.access_token ? data : null, needsConfirm: !data.access_token };
+    const d = await r.json();
+    if (!r.ok) return { ok: false, error: authErr(d) };
+    // If the project auto-confirms, a session comes back immediately.
+    if (d.access_token) {
+      return { ok: true, needsConfirm: false, token: d.access_token, userId: jwtSub(d.access_token), encKey: key };
+    }
+    return { ok: true, needsConfirm: true };
   },
 
-  /** Log in. Returns { ok, token, userId, encKey, error }. */
-  async login(email, password) {
-    const { encKey, authSecret } = await deriveKeys(email, password);
+  /** Log in with the account password. Returns token + the stored enc salt/verifier. */
+  async login(email, accountPassword) {
     const r = await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=password`, {
       method: 'POST',
       headers: { apikey: SUPABASE_KEY, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: email.trim().toLowerCase(), password: authSecret }),
+      body: JSON.stringify({ email: email.trim().toLowerCase(), password: accountPassword }),
     });
-    const data = await r.json();
-    if (!r.ok || !data.access_token) {
-      const msg = data.error_description || data.msg || 'Giriş başarısız (e-posta/parola hatalı)';
-      return { ok: false, error: msg };
-    }
-    return { ok: true, token: data.access_token, userId: jwtSub(data.access_token), encKey };
+    const d = await r.json();
+    if (!r.ok || !d.access_token) return { ok: false, error: authErr(d) };
+    const meta = (d.user && d.user.user_metadata) || {};
+    return {
+      ok: true, token: d.access_token, userId: jwtSub(d.access_token),
+      encSalt: meta.encSalt || null, encVerifier: meta.encVerifier || null,
+    };
   },
 
-  /** Pull all of this user's encrypted rows. */
+  /** Verify the encryption password against the stored salt/verifier → AES key or null. */
+  async unlockEnc(encPassword, encSaltB64, encVerifier) {
+    if (!encSaltB64 || !encVerifier) return null;
+    const key = await deriveEncKey(encPassword, unb64(encSaltB64));
+    try {
+      const v = await decStr(key, encVerifier);
+      return v === VERIFIER ? key : null;
+    } catch { return null; }
+  },
+
+  /** Trigger Supabase's built-in account-password reset email. */
+  async requestPasswordReset(email) {
+    await fetch(`${SUPABASE_URL}/auth/v1/recover`, {
+      method: 'POST',
+      headers: { apikey: SUPABASE_KEY, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: email.trim().toLowerCase() }),
+    });
+    return true; // always succeeds silently (don't reveal whether the email exists)
+  },
+
+  // ── Encrypted sync ──
   async pull(token) {
     const r = await fetch(`${SUPABASE_URL}/rest/v1/items?select=id,kind,ciphertext,updated_at,deleted`, {
       headers: restHeaders(token),
@@ -90,8 +120,6 @@ export const cloud = {
     if (!r.ok) throw new Error('pull failed: ' + r.status);
     return r.json();
   },
-
-  /** Upsert encrypted rows (push). `rows`: [{id,user_id,kind,ciphertext,updated_at,deleted}] */
   async push(token, rows) {
     if (!rows.length) return true;
     const r = await fetch(`${SUPABASE_URL}/rest/v1/items?on_conflict=id`, {

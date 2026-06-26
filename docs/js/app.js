@@ -656,12 +656,12 @@ async function attemptUnlock(e) {
   }
 }
 
-// ── Cloud account (email + master password, zero-knowledge) ──
+// ── Cloud account: recoverable login (account password) + encryption password ──
 function setAuthMode(mode) {
   authMode = mode;
   $('#tab-login').classList.toggle('active', mode === 'login');
   $('#tab-register').classList.toggle('active', mode === 'register');
-  $('#auth-pass2').hidden = mode !== 'register';
+  $('#auth-enc2').hidden = mode !== 'register';
   $('#auth-warn').hidden = mode !== 'register';
   $('#auth-btn').textContent = mode === 'register' ? 'Kayıt Ol' : 'Giriş Yap';
   const msg = $('#auth-msg'); msg.textContent = ''; msg.classList.remove('ok');
@@ -670,15 +670,17 @@ function setAuthMode(mode) {
 async function submitAuth(e) {
   if (e) e.preventDefault();
   const email = $('#auth-email').value.trim();
-  const pass = $('#auth-pass').value;
+  const accountPass = $('#auth-pass').value;
+  const encPass = $('#auth-enc').value;
   const msg = $('#auth-msg');
   const btn = $('#auth-btn');
   msg.textContent = ''; msg.classList.remove('ok');
 
   if (!/.+@.+\..+/.test(email)) { msg.textContent = 'Geçerli bir e-posta girin.'; return; }
-  if (pass.length < 8) { msg.textContent = 'Parola en az 8 karakter olmalı.'; return; }
-  if (authMode === 'register' && pass !== $('#auth-pass2').value) {
-    msg.textContent = 'Parolalar eşleşmiyor.'; return;
+  if (accountPass.length < 6) { msg.textContent = 'Hesap parolası en az 6 karakter olmalı.'; return; }
+  if (encPass.length < 8) { msg.textContent = 'Şifreleme parolası en az 8 karakter olmalı.'; return; }
+  if (authMode === 'register' && encPass !== $('#auth-enc2').value) {
+    msg.textContent = 'Şifreleme parolaları eşleşmiyor.'; return;
   }
 
   const label = btn.textContent;
@@ -686,25 +688,26 @@ async function submitAuth(e) {
   btn.textContent = authMode === 'register' ? 'Kayıt olunuyor…' : 'Giriş yapılıyor…';
   try {
     if (authMode === 'register') {
-      const r = await cloud.signup(email, pass);
+      const r = await cloud.signup(email, accountPass, encPass);
       if (!r.ok) { msg.textContent = r.error; return; }
       if (r.needsConfirm) {
         msg.classList.add('ok');
         msg.textContent = '✓ Onay e-postası gönderildi. E-postanı onayla, sonra giriş yap.';
         setAuthMode('login');
-        $('#auth-pass').value = ''; $('#auth-pass2').value = '';
         return;
       }
-      await enterCloud({ token: r.session.access_token, userId: cloud.jwtSub(r.session.access_token), email, encKey: r.encKey });
+      await enterCloud({ token: r.token, userId: r.userId, email, encKey: r.encKey });
     } else {
-      const r = await cloud.login(email, pass);
+      const r = await cloud.login(email, accountPass);
       if (!r.ok) {
         msg.textContent = /confirm/i.test(r.error)
           ? 'Önce e-postanı onaylaman gerekiyor (gelen kutunu kontrol et).'
           : r.error;
         return;
       }
-      await enterCloud({ token: r.token, userId: r.userId, email, encKey: r.encKey });
+      const encKey = await cloud.unlockEnc(encPass, r.encSalt, r.encVerifier);
+      if (!encKey) { msg.textContent = 'Şifreleme parolası hatalı.'; return; }
+      await enterCloud({ token: r.token, userId: r.userId, email, encKey });
     }
   } catch (ex) {
     msg.textContent = 'Hata: ' + (ex && ex.message ? ex.message : ex);
@@ -714,11 +717,20 @@ async function submitAuth(e) {
   }
 }
 
+async function forgotPassword() {
+  const email = $('#auth-email').value.trim();
+  const msg = $('#auth-msg');
+  if (!/.+@.+\..+/.test(email)) { msg.textContent = 'Önce e-posta alanına adresini yaz.'; return; }
+  await cloud.requestPasswordReset(email);
+  msg.classList.add('ok');
+  msg.textContent = '✓ Sıfırlama bağlantısı gönderildi (varsa). Not: yeni hesap parolasıyla girersin, şifreleme parolan değişmez.';
+}
+
 async function enterCloud({ token, userId, email, encKey }) {
   cloudSession = { token, userId, email };
   localStorage.setItem('notex.lastEmail', email);
   vault.setKey(encKey);
-  $('#auth-pass').value = ''; $('#auth-pass2').value = '';
+  $('#auth-pass').value = ''; $('#auth-enc').value = ''; $('#auth-enc2').value = '';
   await main();
   // Encrypted sync (pull + push) is wired in the next step.
 }
@@ -730,6 +742,7 @@ function boot() {
   $('#tab-login').addEventListener('click', () => setAuthMode('login'));
   $('#tab-register').addEventListener('click', () => setAuthMode('register'));
   $('#auth-form').addEventListener('submit', submitAuth);
+  $('#forgot-pass').addEventListener('click', (e) => { e.preventDefault(); forgotPassword(); });
   $('#use-local').addEventListener('click', (e) => {
     e.preventDefault();
     $('#auth-cloud').hidden = true; $('#auth-local').hidden = false; showLock();

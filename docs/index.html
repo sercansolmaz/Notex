@@ -30,14 +30,18 @@
         </div>
         <form id="auth-form" autocomplete="on">
           <input id="auth-email" type="email" placeholder="E-posta" autocomplete="email" />
-          <input id="auth-pass" type="password" placeholder="Ana parola" autocomplete="current-password" />
-          <input id="auth-pass2" type="password" placeholder="Parolayı doğrula" autocomplete="new-password" hidden />
+          <input id="auth-pass" type="password" placeholder="Hesap parolası (giriş)" autocomplete="current-password" />
+          <input id="auth-enc" type="password" placeholder="Şifreleme parolası (notları korur)" autocomplete="off" />
+          <input id="auth-enc2" type="password" placeholder="Şifreleme parolasını doğrula" autocomplete="off" hidden />
           <button id="auth-btn" type="submit" class="primary">Giriş Yap</button>
         </form>
         <p id="auth-msg" class="lock-err"></p>
-        <p class="lock-note">🔐 Uçtan uca şifreli · parolan yalnız sende · sıfır-bilgi</p>
-        <p id="auth-warn" class="lock-warn" hidden>⚠️ Parolanı unutursan notların kurtarılamaz (sıfır-bilgi).</p>
-        <p class="auth-switch"><a id="use-local" href="#">Hesapsız, yalnız bu cihazda kullan →</a></p>
+        <p class="lock-note">🔐 Hesap kurtarılabilir · şifreleme parolası yalnız sende (operatör okuyamaz)</p>
+        <p id="auth-warn" class="lock-warn" hidden>⚠️ Şifreleme parolanı unutursan notların kurtarılamaz.</p>
+        <p class="auth-switch">
+          <a id="forgot-pass" href="#">Hesap parolamı unuttum</a> ·
+          <a id="use-local" href="#">Hesapsız kullan</a>
+        </p>
       </div>
 
       <!-- Local-only vault (no account, no sync) -->
