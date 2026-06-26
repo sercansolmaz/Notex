@@ -2,6 +2,7 @@ import { db } from './db.js';
 import { renderMarkdown, htmlToMarkdown } from './markdown.js';
 import { vault } from './vault.js';
 import { cloud } from './cloud.js';
+import { backup } from './backup.js';
 
 let cloudSession = null; // { token, userId, email } when signed into a cloud account
 let authMode = 'login';  // 'login' | 'register'
@@ -533,6 +534,69 @@ function handleLinkClick(e) {
   else if (wiki) { createNote('# ' + wiki.dataset.link + '\n\n'); } // create-on-click
 }
 
+// ── Encrypted backup file (export / import) ──
+async function downloadBackup() {
+  if (!vault.hasKey()) { alert('Önce giriş yap / kasayı aç.'); return; }
+  const pw = prompt('Yedek parolası belirle (bu parolayla şifrelenir; geri yüklerken gerekir):');
+  if (pw == null) return;
+  if (pw.length < 8) { alert('Yedek parolası en az 8 karakter olmalı.'); return; }
+
+  const data = {
+    notes: state.notes,
+    notebooks: state.notebooks,
+    tags: state.tags,
+    exportedAt: new Date().toISOString(),
+  };
+  const envelope = await backup.encrypt(data, pw);
+  const blob = new Blob([JSON.stringify(envelope)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `notex-yedek-${new Date().toISOString().slice(0, 10)}.json`;
+  document.body.appendChild(a); a.click(); a.remove();
+  URL.revokeObjectURL(a.href);
+}
+
+async function restoreFromFile(file) {
+  if (!file) return;
+  if (!vault.hasKey()) { alert('Önce giriş yap / kasayı aç.'); return; }
+  let envelope;
+  try { envelope = JSON.parse(await file.text()); } catch { alert('Dosya okunamadı (geçersiz).'); return; }
+  if (envelope.type !== 'encrypted-backup') { alert('Bu bir Notex yedek dosyası değil.'); return; }
+
+  const pw = prompt('Yedek parolasını gir:');
+  if (pw == null) return;
+  let data;
+  try { data = await backup.decrypt(envelope, pw); }
+  catch { alert('Parola hatalı veya dosya bozuk.'); return; }
+
+  let added = 0;
+  // Tags + notebooks: add any that are missing (by id).
+  for (const t of data.tags || []) {
+    if (!state.tags.some((x) => x.id === t.id)) {
+      state.tags.push(t);
+      await db.put('tags', await vault.encryptObject(t.id, { name: t.name, color: t.color, createdAt: t.createdAt }));
+    }
+  }
+  for (const nb of data.notebooks || []) {
+    if (!state.notebooks.some((x) => x.id === nb.id)) {
+      state.notebooks.push(nb);
+      await db.put('notebooks', await vault.encryptObject(nb.id, { name: nb.name, createdAt: nb.createdAt }));
+    }
+  }
+  // Notes: add new, or overwrite when the backup copy is newer (last-write-wins).
+  for (const n of data.notes || []) {
+    const local = state.notes.find((x) => x.id === n.id);
+    if (!local) { state.notes.push(n); await db.put('notes', await vault.encryptNote(n)); added++; }
+    else if ((n.updatedAt || 0) > (local.updatedAt || 0)) {
+      Object.assign(local, n); await db.put('notes', await vault.encryptNote(local)); added++;
+    }
+  }
+
+  renderSidebar();
+  renderList();
+  alert(`Geri yüklendi ✓ (${(data.notes || []).length} not işlendi, ${added} eklendi/güncellendi).`);
+}
+
 // ── Wiring ──
 function wire() {
   $('#btn-new').addEventListener('click', () => createNote(''));
@@ -553,6 +617,13 @@ function wire() {
   $('#btn-delete').addEventListener('click', deleteForever);
   $('#btn-theme').addEventListener('click', toggleTheme);
   $('#btn-lock').addEventListener('click', () => { vault.lock(); location.reload(); });
+  $('#btn-backup').addEventListener('click', downloadBackup);
+  $('#btn-restore-backup').addEventListener('click', () => $('#restore-file').click());
+  $('#restore-file').addEventListener('change', (e) => {
+    const f = e.target.files[0];
+    e.target.value = '';
+    restoreFromFile(f);
+  });
 
   $('#title').addEventListener('input', scheduleSave);
   $('#body').addEventListener('input', scheduleSave);
