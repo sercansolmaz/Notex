@@ -1,8 +1,8 @@
 // Minimal IndexedDB wrapper — local-first storage, zero dependencies.
 // Stores: notes, notebooks, tags (all hold encrypted records).
 const DB_NAME = 'notex';
-const DB_VERSION = 2;
-const STORES = ['notes', 'notebooks', 'tags'];
+const DB_VERSION = 3;
+const STORES = ['notes', 'notebooks', 'tags', 'files'];
 
 let _db = null;
 

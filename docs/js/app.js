@@ -223,6 +223,7 @@ function selectNote(id) {
 
   $('#title').value = n.title || '';
   renderEditorMeta(n);
+  loadPdfPreviewFor(n.id);
 
   const isRich = n.format === 'rich';
   if (isRich) {
@@ -808,6 +809,117 @@ async function restoreFromFile(file) {
   alert(`Geri yüklendi ✓ (${(data.notes || []).length} not işlendi, ${added} eklendi/güncellendi).`);
 }
 
+// ── Attachments (image inline + PDF preview) + OCR ──
+function fileToDataURL(file) {
+  return new Promise((res, rej) => {
+    const r = new FileReader(); r.onload = () => res(r.result); r.onerror = rej; r.readAsDataURL(file);
+  });
+}
+function loadScript(src) {
+  return new Promise((res, rej) => {
+    if (document.querySelector(`script[data-src="${src}"]`)) return res();
+    const s = document.createElement('script');
+    s.src = src; s.dataset.src = src; s.onload = res; s.onerror = () => rej(new Error('Yüklenemedi: ' + src));
+    document.head.appendChild(s);
+  });
+}
+
+async function attachFile(file) {
+  const n = currentNote();
+  if (!n || n.isTrashed) { alert('Önce bir not aç.'); return; }
+  const dataUrl = await fileToDataURL(file);
+  if (file.type.startsWith('image/')) {
+    if (n.format === 'rich') {
+      $('#rich').focus();
+      document.execCommand('insertHTML', false, `<img src="${dataUrl}" alt="${file.name}">`);
+      n.content = $('#rich').innerHTML;
+    } else {
+      n.content = `${$('#body').value}\n\n![${file.name}](${dataUrl})\n`;
+      $('#body').value = n.content; updatePreview();
+    }
+    await persist(n); renderList();
+    if (confirm('Görselden metin çıkarılsın mı? (OCR — ilk seferde model indirilir)')) {
+      const txt = await ocrImage(dataUrl);
+      if (txt) { appendTextToNote('🔎 OCR:\n' + txt); }
+    }
+  } else if (file.type === 'application/pdf') {
+    await db.put('files', { id: n.id, name: file.name, type: 'pdf', data: dataUrl });
+    showPdfPreview(n.id, dataUrl, file.name);
+  } else {
+    alert('Yalnızca görsel ve PDF desteklenir.');
+  }
+}
+
+function appendTextToNote(text) {
+  const n = currentNote(); if (!n) return;
+  if (n.format === 'rich') { $('#rich').innerHTML += `<p>${escapeHTML(text).replace(/\n/g, '<br>')}</p>`; n.content = $('#rich').innerHTML; }
+  else { n.content = `${$('#body').value}\n\n${text}\n`; $('#body').value = n.content; updatePreview(); }
+  persist(n); updateWordCount();
+}
+
+function showPdfPreview(noteId, dataUrl, name) {
+  const el = $('#attach-preview');
+  el.innerHTML =
+    `<div class="ap-head"><span>📄 ${escapeHTML(name || 'PDF')}</span>` +
+    `<span><button id="ap-ocr">🔎 Metne çevir (OCR)</button> <button id="ap-remove" title="Kaldır">✕</button></span></div>` +
+    `<iframe class="ap-frame" src="${dataUrl}"></iframe>` +
+    `<p id="ap-status" class="muted"></p>`;
+  el.hidden = false;
+  $('#ap-ocr').addEventListener('click', () => ocrPdf(dataUrl));
+  $('#ap-remove').addEventListener('click', async () => { await db.remove('files', noteId); el.hidden = true; el.innerHTML = ''; });
+}
+
+async function loadPdfPreviewFor(noteId) {
+  const el = $('#attach-preview'); el.hidden = true; el.innerHTML = '';
+  const rec = await db.get('files', noteId);
+  if (rec && rec.type === 'pdf') showPdfPreview(noteId, rec.data, rec.name);
+}
+
+// OCR — lazy-loads Tesseract.js (and pdf.js for PDFs) from a CDN on first use.
+async function ocrImage(dataUrl, statusEl) {
+  const setS = (t) => { if (statusEl) statusEl.textContent = t; };
+  try {
+    setS('OCR modeli yükleniyor…');
+    await loadScript('https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js');
+    setS('Metin tanınıyor…');
+    const { data } = await window.Tesseract.recognize(dataUrl, 'tur+eng');
+    setS('');
+    return (data.text || '').trim();
+  } catch (e) { setS('OCR hatası: ' + e.message + ' (çevrimiçi olmalısın)'); return ''; }
+}
+
+async function ocrPdf(dataUrl) {
+  const status = $('#ap-status');
+  status.textContent = 'PDF açılıyor…';
+  try {
+    await loadScript('https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/legacy/build/pdf.min.js');
+    const pdfjsLib = window.pdfjsLib;
+    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/legacy/build/pdf.worker.min.js';
+    const data = Uint8Array.from(atob(dataUrl.split(',')[1]), (c) => c.charCodeAt(0));
+    const pdf = await pdfjsLib.getDocument({ data }).promise;
+    let out = '';
+    const maxPages = Math.min(pdf.numPages, 10);
+    for (let p = 1; p <= maxPages; p++) {
+      status.textContent = `Sayfa ${p}/${maxPages}…`;
+      const page = await pdf.getPage(p);
+      // 1) embedded text (digital PDFs)
+      const tc = await page.getTextContent();
+      let pageText = tc.items.map((i) => i.str).join(' ').trim();
+      // 2) if (near-)empty → render + OCR (scanned PDFs)
+      if (pageText.length < 12) {
+        const viewport = page.getViewport({ scale: 1.6 });
+        const canvas = document.createElement('canvas');
+        canvas.width = viewport.width; canvas.height = viewport.height;
+        await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise;
+        pageText = await ocrImage(canvas.toDataURL('image/png'), status);
+      }
+      if (pageText) out += pageText + '\n\n';
+    }
+    status.textContent = out ? '✓ Metin çıkarıldı, nota eklendi.' : 'Metin bulunamadı.';
+    if (out) appendTextToNote('📄 PDF metni:\n' + out.trim());
+  } catch (e) { status.textContent = 'OCR hatası: ' + e.message + ' (çevrimiçi olmalısın)'; }
+}
+
 // ── Settings + import (MD / ENEX) ──
 function makeNote({ title = '', content = '', format = 'md' } = {}) {
   return {
@@ -975,6 +1087,8 @@ function wire() {
   $('#add-tag').addEventListener('click', createTag);
   $('#note-notebook').addEventListener('change', (e) => setNoteNotebook(e.target.value));
   $('#add-note-tag').addEventListener('click', addTagToCurrentNote);
+  $('#btn-attach').addEventListener('click', () => $('#attach-file').click());
+  $('#attach-file').addEventListener('change', (e) => { const f = e.target.files[0]; e.target.value = ''; if (f) attachFile(f); });
 
   document.addEventListener('keydown', (e) => {
     const mod = e.metaKey || e.ctrlKey;

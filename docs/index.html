@@ -8,7 +8,7 @@
   <link rel="manifest" href="./manifest.webmanifest" />
   <link rel="icon" href="./icons/icon-192.png" />
   <link rel="apple-touch-icon" href="./icons/icon-192.png" />
-  <link rel="stylesheet" href="./css/style.css?v=4" />
+  <link rel="stylesheet" href="./css/style.css?v=5" />
   <script>
     // Apply saved theme before paint (no flash).
     const t = localStorage.getItem('notex.theme');
@@ -164,6 +164,8 @@
           </label>
           <div id="note-tags" class="note-tags"></div>
           <button id="add-note-tag" class="meta-addtag">+ Etiket</button>
+          <button id="btn-attach" class="meta-addtag">📎 Dosya</button>
+          <input id="attach-file" type="file" accept="image/*,application/pdf" hidden />
         </div>
 
         <!-- Rich-text toolbar (shown only for rich notes) -->
@@ -190,6 +192,8 @@
             data-placeholder="Zengin metinle yazın… (araç çubuğundan biçimlendirin)" hidden></div>
           <div id="preview" class="preview markdown"></div>
         </div>
+
+        <div id="attach-preview" class="attach-preview" hidden></div>
 
         <div class="status-bar">
           <span id="words" class="muted"></span>

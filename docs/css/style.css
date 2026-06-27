@@ -377,6 +377,14 @@ button.primary:hover { filter: brightness(1.05); }
 .set-range { display: flex; align-items: center; gap: 10px; font-size: 13px; margin-top: 12px; }
 .set-range input { flex: 1; }
 
+/* ── Attachment preview (PDF) ── */
+.attach-preview { border-top: 1px solid var(--border); background: var(--surface); }
+.attach-preview[hidden] { display: none; }
+.ap-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 18px; font-size: 12px; }
+.ap-head button { font-size: 12px; padding: 4px 9px; border-radius: 7px; }
+.ap-frame { width: 100%; height: 320px; border: none; background: #fff; }
+.attach-preview > .muted { padding: 2px 18px 8px; margin: 0; }
+
 /* ── Drag & drop ── */
 .note-item.dragging { opacity: 0.45; }
 .drop-target {
