@@ -77,6 +77,7 @@ async function loadAll() {
 async function persist(note) {
   note.updatedAt = now();
   await db.put('notes', await vault.encryptNote(note));
+  if (cloudSession) pushItems([{ kind: 'note', obj: note }]); // fire-and-forget sync
 }
 
 // Drop a note that was left completely empty (no title, no content) — keeps
@@ -119,6 +120,7 @@ async function createNote(content = '') {
 
   state.notes.push(note);
   await db.put('notes', await vault.encryptNote(note));
+  if (cloudSession) pushItems([{ kind: 'note', obj: note }]);
   selectNote(note.id);
   renderFilters();
   renderSidebar();
@@ -491,6 +493,7 @@ async function restoreNote() {
 async function deleteForever() {
   const n = currentNote(); if (!n) return;
   if (!confirm('Bu not kalıcı olarak silinecek. Emin misiniz?')) return;
+  if (cloudSession) await pushItems([{ kind: 'note', obj: n, deleted: true }]); // tombstone
   await db.remove('notes', n.id);
   state.notes = state.notes.filter((x) => x.id !== n.id);
   state.currentId = null;
@@ -532,6 +535,70 @@ function handleLinkClick(e) {
   }
   if (target) { state.view = 'all'; renderFilters(); navigateTo(target.id); }
   else if (wiki) { createNote('# ' + wiki.dataset.link + '\n\n'); } // create-on-click
+}
+
+// ── Encrypted cloud sync (Supabase) ──
+function setSyncStatus(t) { if (cloudSession) $('#count').textContent = t; }
+
+async function pushItems(entries) {
+  // entries: [{ kind, obj, deleted }]  — obj is the full in-memory item
+  if (!cloudSession || !entries.length) return;
+  try {
+    const rows = await Promise.all(entries.map(async ({ kind, obj, deleted }) => ({
+      id: obj.id,
+      user_id: cloudSession.userId,
+      kind,
+      ciphertext: (await vault.encryptObject(obj.id, obj)).c,
+      updated_at: new Date(obj.updatedAt || obj.createdAt || Date.now()).toISOString(),
+      deleted: !!deleted,
+    })));
+    await cloud.push(cloudSession.token, rows);
+  } catch (e) { console.warn('sync push failed', e); }
+}
+
+async function pushAllLocal() {
+  const entries = [
+    ...state.notes.map((obj) => ({ kind: 'note', obj })),
+    ...state.notebooks.map((obj) => ({ kind: 'notebook', obj })),
+    ...state.tags.map((obj) => ({ kind: 'tag', obj })),
+  ];
+  for (let i = 0; i < entries.length; i += 50) await pushItems(entries.slice(i, i + 50));
+}
+
+async function fullSync() {
+  if (!cloudSession) return;
+  setSyncStatus('Senkronlanıyor…');
+  let remote;
+  try { remote = await cloud.pull(cloudSession.token); }
+  catch (e) { setSyncStatus('Senkron hatası'); console.warn('pull failed', e); return; }
+
+  for (const row of remote) {
+    const obj = await vault.decryptObject({ id: row.id, c: row.ciphertext });
+    if (!obj) continue;
+    const updated = new Date(row.updated_at).getTime();
+    if (row.kind === 'note') {
+      const local = state.notes.find((n) => n.id === obj.id);
+      if (row.deleted) {
+        if (local) { state.notes = state.notes.filter((n) => n.id !== obj.id); await db.remove('notes', obj.id); }
+      } else if (!local) {
+        state.notes.push(obj); await db.put('notes', await vault.encryptNote(obj));
+      } else if (updated > (local.updatedAt || 0)) {
+        Object.assign(local, obj); await db.put('notes', await vault.encryptNote(local));
+      }
+    } else if (row.kind === 'notebook' && !row.deleted) {
+      if (!state.notebooks.some((x) => x.id === obj.id)) {
+        state.notebooks.push(obj); await db.put('notebooks', await vault.encryptObject(obj.id, obj));
+      }
+    } else if (row.kind === 'tag' && !row.deleted) {
+      if (!state.tags.some((x) => x.id === obj.id)) {
+        state.tags.push(obj); await db.put('tags', await vault.encryptObject(obj.id, obj));
+      }
+    }
+  }
+  await pushAllLocal();
+  renderSidebar();
+  renderList();
+  setSyncStatus('Senkronlandı ✓');
 }
 
 // ── Encrypted backup file (export / import) ──
@@ -617,6 +684,7 @@ function wire() {
   $('#btn-delete').addEventListener('click', deleteForever);
   $('#btn-theme').addEventListener('click', toggleTheme);
   $('#btn-lock').addEventListener('click', () => { vault.lock(); location.reload(); });
+  $('#btn-sync').addEventListener('click', fullSync);
   $('#btn-backup').addEventListener('click', downloadBackup);
   $('#btn-restore-backup').addEventListener('click', () => $('#restore-file').click());
   $('#restore-file').addEventListener('change', (e) => {
@@ -831,7 +899,8 @@ async function enterCloud({ token, userId, email, encKey }) {
   vault.setKey(encKey);
   $('#auth-pass').value = ''; $('#auth-enc').value = ''; $('#auth-enc2').value = '';
   await main();
-  // Encrypted sync (pull + push) is wired in the next step.
+  $('#btn-sync').hidden = false; // cloud is active → show "sync now"
+  await fullSync(); // pull cloud notes + push local ones
 }
 
 function boot() {
