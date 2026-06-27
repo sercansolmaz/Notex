@@ -8,7 +8,7 @@
   <link rel="manifest" href="./manifest.webmanifest" />
   <link rel="icon" href="./icons/icon-192.png" />
   <link rel="apple-touch-icon" href="./icons/icon-192.png" />
-  <link rel="stylesheet" href="./css/style.css?v=3" />
+  <link rel="stylesheet" href="./css/style.css?v=4" />
   <script>
     // Apply saved theme before paint (no flash).
     const t = localStorage.getItem('notex.theme');
@@ -125,6 +125,7 @@
 
       <div class="side-foot">
         <button id="btn-theme" title="Tema değiştir">🌓</button>
+        <button id="btn-settings" title="Ayarlar">⚙️</button>
         <button id="btn-lock" title="Kasayı kilitle">🔒</button>
         <button id="btn-sync" title="Şimdi senkronla (bulut)" hidden>🔄</button>
         <button id="btn-account" title="Hesap & senkron seçenekleri" hidden>👤</button>
@@ -199,6 +200,51 @@
   </div>
 
   <div id="note-menu" class="ctx-menu" hidden></div>
+
+  <!-- Settings modal -->
+  <div id="settings" class="modal" hidden>
+    <div class="modal-card">
+      <div class="modal-head">
+        <b>⚙️ Ayarlar</b>
+        <button id="settings-close" class="modal-x" title="Kapat">✕</button>
+      </div>
+      <div class="modal-body">
+        <section class="set-sec">
+          <h4>İçe Aktar</h4>
+          <p class="muted">Notlarını dosyadan içe aktar. Yeni notlar olarak eklenir.</p>
+          <div class="set-row">
+            <button id="import-md">📄 Markdown (.md / .txt)</button>
+            <button id="import-enex">🐘 Evernote (.enex)</button>
+          </div>
+          <p id="import-status" class="muted"></p>
+          <input id="import-md-file" type="file" accept=".md,.markdown,.txt,text/markdown,text/plain" multiple hidden />
+          <input id="import-enex-file" type="file" accept=".enex,.xml,application/xml,text/xml" hidden />
+        </section>
+
+        <section class="set-sec">
+          <h4>Görünüm</h4>
+          <div class="set-row">
+            <button data-theme-set="light">☀️ Gündüz</button>
+            <button data-theme-set="dark">🌙 Gece</button>
+            <button data-theme-set="auto">🌗 Otomatik</button>
+          </div>
+          <label class="set-range">Yazı boyutu
+            <input id="font-size" type="range" min="13" max="20" step="1" />
+            <span id="font-size-val" class="muted"></span>
+          </label>
+        </section>
+
+        <section class="set-sec">
+          <h4>Yedek</h4>
+          <p class="muted">Şifreli yedek dosyası (Dropbox/iCloud/Drive'a koyabilirsin).</p>
+          <div class="set-row">
+            <button id="set-backup">💾 Yedek indir</button>
+            <button id="set-restore">⬆️ Geri yükle</button>
+          </div>
+        </section>
+      </div>
+    </div>
+  </div>
 
   <script type="module" src="./js/app.js"></script>
   <script>

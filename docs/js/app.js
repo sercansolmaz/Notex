@@ -808,6 +808,75 @@ async function restoreFromFile(file) {
   alert(`Geri yüklendi ✓ (${(data.notes || []).length} not işlendi, ${added} eklendi/güncellendi).`);
 }
 
+// ── Settings + import (MD / ENEX) ──
+function makeNote({ title = '', content = '', format = 'md' } = {}) {
+  return {
+    id: uid(), title, content, format, notebookId: null, tagIds: [],
+    isPinned: false, isFavorite: false, isArchived: false, isTrashed: false,
+    createdAt: now(), updatedAt: now(),
+  };
+}
+
+async function addImportedNote(note) {
+  state.notes.push(note);
+  await db.put('notes', await vault.encryptNote(note));
+  if (cloudSession && autoSync) pushItems([{ kind: 'note', obj: note }]);
+}
+
+async function importMarkdownFiles(files) {
+  let count = 0;
+  for (const file of files) {
+    const text = await file.text();
+    const lines = text.replace(/\r\n/g, '\n').split('\n');
+    let title = file.name.replace(/\.(md|markdown|txt)$/i, '');
+    let content = text;
+    if (lines[0] && /^#\s+/.test(lines[0])) {
+      title = lines[0].replace(/^#\s+/, '').trim();
+      content = lines.slice(1).join('\n').trim();
+    }
+    await addImportedNote(makeNote({ title, content }));
+    count++;
+  }
+  return count;
+}
+
+async function importEnexFile(file) {
+  const text = await file.text();
+  const doc = new DOMParser().parseFromString(text, 'application/xml');
+  const noteEls = doc.querySelectorAll('note');
+  let count = 0;
+  for (const el of noteEls) {
+    const title = (el.querySelector('title')?.textContent || 'Başlıksız').trim();
+    let enml = el.querySelector('content')?.textContent || '';
+    enml = enml
+      .replace(/<en-todo[^>]*checked="true"[^>]*\/?>/gi, '\n- [x] ')
+      .replace(/<en-todo[^>]*\/?>/gi, '\n- [ ] ')
+      .replace(/<en-media[^>]*\/?>/gi, ' [ek] ');
+    const content = htmlToMarkdown(enml);
+    const note = makeNote({ title, content });
+    for (const tEl of el.querySelectorAll('tag')) {
+      const tn = tEl.textContent.trim();
+      if (tn) { const tag = await getOrCreateTag(tn); if (!note.tagIds.includes(tag.id)) note.tagIds.push(tag.id); }
+    }
+    await addImportedNote(note);
+    count++;
+  }
+  return count;
+}
+
+function openSettings() {
+  $('#font-size').value = parseInt(localStorage.getItem('notex.fontSize') || '14', 10);
+  $('#font-size-val').textContent = $('#font-size').value + 'px';
+  $('#import-status').textContent = '';
+  $('#settings').hidden = false;
+}
+function closeSettings() { $('#settings').hidden = true; }
+
+function applyFontSize(px) {
+  document.documentElement.style.setProperty('--editor-font', px + 'px');
+  localStorage.setItem('notex.fontSize', String(px));
+}
+
 // ── Wiring ──
 function wire() {
   $('#btn-new').addEventListener('click', () => createNote(''));
@@ -828,6 +897,41 @@ function wire() {
   $('#btn-delete').addEventListener('click', deleteForever);
   $('#btn-theme').addEventListener('click', toggleTheme);
   $('#btn-lock').addEventListener('click', () => { vault.lock(); location.reload(); });
+
+  // Settings modal
+  $('#btn-settings').addEventListener('click', openSettings);
+  $('#settings-close').addEventListener('click', closeSettings);
+  $('#settings').addEventListener('click', (e) => { if (e.target.id === 'settings') closeSettings(); });
+  $('#import-md').addEventListener('click', () => $('#import-md-file').click());
+  $('#import-enex').addEventListener('click', () => $('#import-enex-file').click());
+  $('#import-md-file').addEventListener('change', async (e) => {
+    const files = [...e.target.files]; e.target.value = '';
+    $('#import-status').textContent = 'İçe aktarılıyor…';
+    const n = await importMarkdownFiles(files);
+    renderSidebar(); renderList();
+    $('#import-status').textContent = `✓ ${n} not içe aktarıldı.`;
+  });
+  $('#import-enex-file').addEventListener('change', async (e) => {
+    const file = e.target.files[0]; e.target.value = '';
+    if (!file) return;
+    $('#import-status').textContent = 'ENEX ayrıştırılıyor…';
+    try {
+      const n = await importEnexFile(file);
+      renderSidebar(); renderList();
+      $('#import-status').textContent = `✓ ${n} not içe aktarıldı.`;
+    } catch (ex) { $('#import-status').textContent = 'Hata: ' + ex.message; }
+  });
+  document.querySelectorAll('[data-theme-set]').forEach((b) =>
+    b.addEventListener('click', () => {
+      const t = b.dataset.themeSet;
+      if (t === 'auto') { document.documentElement.removeAttribute('data-theme'); localStorage.removeItem('notex.theme'); }
+      else setTheme(t);
+    }));
+  $('#font-size').addEventListener('input', (e) => {
+    applyFontSize(e.target.value); $('#font-size-val').textContent = e.target.value + 'px';
+  });
+  $('#set-backup').addEventListener('click', downloadBackup);
+  $('#set-restore').addEventListener('click', () => $('#restore-file').click());
   $('#btn-back-list').addEventListener('click', () => document.getElementById('app').classList.remove('show-editor'));
   $('#btn-sync').addEventListener('click', fullSync);
   $('#btn-account').addEventListener('click', (e) => {
@@ -1075,6 +1179,7 @@ async function enterCloud({ token, userId, email, encKey }) {
 }
 
 function boot() {
+  applyFontSize(parseInt(localStorage.getItem('notex.fontSize') || '14', 10));
   // Local-only vault wiring (existing)
   $('#lock-form').addEventListener('submit', attemptUnlock);
   // Cloud auth wiring

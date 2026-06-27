@@ -15,6 +15,9 @@ function inline(t) {
   t = esc(t);
   // inline code first so its contents aren't further processed
   t = t.replace(/`([^`]+)`/g, (_, c) => `<code>${c}</code>`);
+  // images ![alt](url) — before links so they aren't matched as links
+  t = t.replace(/!\[([^\]]*)\]\(([^)\s]+)\)/g,
+    (_, alt, url) => `<img src="${attr(url)}" alt="${attr(alt)}" class="md-img">`);
   // links [text](url)
   t = t.replace(/\[([^\]]+)\]\(([^)\s]+)\)/g,
     (_, txt, url) => `<a href="${attr(url)}" target="_blank" rel="noopener">${txt}</a>`);
