@@ -739,6 +739,7 @@ tarayıcısında (IndexedDB) saklanır — sunucu yok, takip yok.
 `;
 
 async function main() {
+  document.getElementById('landing').hidden = true;
   document.getElementById('lock').style.display = 'none';
   document.getElementById('app').hidden = false;
   wire();
@@ -926,10 +927,26 @@ function boot() {
     $('#auth-local').hidden = true; $('#auth-cloud').hidden = false; $('#auth-email').focus();
   });
 
-  // Cloud login is the default screen.
-  setAuthMode('login');
+  // Landing page is the default screen; auth appears only after a CTA.
+  $('#cta-login').addEventListener('click', () => showAuth('login'));
+  $('#cta-register').addEventListener('click', () => showAuth('register'));
+  $('#back-home').addEventListener('click', (e) => {
+    e.preventDefault();
+    $('#lock').style.display = 'none';
+    $('#auth-local').hidden = true; $('#auth-cloud').hidden = false;
+    $('#landing').hidden = false;
+  });
+
   const lastEmail = localStorage.getItem('notex.lastEmail');
   if (lastEmail) $('#auth-email').value = lastEmail;
+  $('#landing').hidden = false;
+}
+
+function showAuth(mode) {
+  $('#landing').hidden = true;
+  $('#auth-local').hidden = true;
+  $('#auth-cloud').hidden = false;
+  setAuthMode(mode);
   $('#lock').style.display = 'flex';
   ($('#auth-email').value ? $('#auth-pass') : $('#auth-email')).focus();
 }

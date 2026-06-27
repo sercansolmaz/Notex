@@ -1,5 +1,5 @@
 // Notex service worker — app-shell offline cache.
-const CACHE = 'notex-v1';
+const CACHE = 'notex-v2';
 const ASSETS = [
   './',
   './index.html',
@@ -32,15 +32,17 @@ self.addEventListener('fetch', (e) => {
   if (request.method !== 'GET') return;
   if (new URL(request.url).origin !== self.location.origin) return; // pass cross-origin through
 
-  // Stale-while-revalidate: serve from cache instantly (offline-capable) while
-  // fetching a fresh copy in the background, so deployed updates still propagate.
+  // Network-first: always load the freshest copy when online (so deployed
+  // updates show immediately), fall back to cache only when offline.
   e.respondWith(
-    caches.open(CACHE).then(async (cache) => {
-      const cached = await cache.match(request);
-      const network = fetch(request)
-        .then((res) => { if (res && res.ok) cache.put(request, res.clone()); return res; })
-        .catch(() => cached);
-      return cached || network;
-    })
+    fetch(request)
+      .then((res) => {
+        if (res && res.ok) {
+          const copy = res.clone();
+          caches.open(CACHE).then((cache) => cache.put(request, copy));
+        }
+        return res;
+      })
+      .catch(() => caches.match(request))
   );
 });

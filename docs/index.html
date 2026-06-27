@@ -8,7 +8,7 @@
   <link rel="manifest" href="./manifest.webmanifest" />
   <link rel="icon" href="./icons/icon-192.png" />
   <link rel="apple-touch-icon" href="./icons/icon-192.png" />
-  <link rel="stylesheet" href="./css/style.css" />
+  <link rel="stylesheet" href="./css/style.css?v=2" />
   <script>
     // Apply saved theme before paint (no flash).
     const t = localStorage.getItem('notex.theme');
@@ -16,8 +16,32 @@
   </script>
 </head>
 <body>
+  <!-- Landing / home page (shown first) -->
+  <div id="landing" class="landing">
+    <div class="landing-inner">
+      <img class="landing-logo" src="./icons/icon-192.png" alt="Notex" width="92" height="92" />
+      <h1 class="landing-title">Notex</h1>
+      <p class="landing-tagline">Şifreli, çok-cihazlı, local-first notlar.</p>
+      <p class="landing-sub">
+        Notların uçtan uca şifreli — operatör bile okuyamaz. Her cihazından eriş,
+        çevrimdışı çalış, Markdown ya da zengin metinle yaz.
+      </p>
+      <div class="landing-cta">
+        <button id="cta-login" class="btn-cta primary">Giriş Yap</button>
+        <button id="cta-register" class="btn-cta">Hesap Oluştur</button>
+      </div>
+      <div class="landing-features">
+        <div class="feat"><span>🔐</span><b>Uçtan uca şifreli</b><small>Sıfır-bilgi · anahtar yalnız sende</small></div>
+        <div class="feat"><span>☁️</span><b>Her cihazda senkron</b><small>Yaz, her yerde gör</small></div>
+        <div class="feat"><span>✍️</span><b>Markdown + zengin metin</b><small>Nasıl istersen öyle</small></div>
+        <div class="feat"><span>💾</span><b>Şifreli yedek</b><small>Dropbox · iCloud · Drive</small></div>
+      </div>
+      <p class="landing-foot">Local-first · PWA · sıfır-bilgi</p>
+    </div>
+  </div>
+
   <!-- Lock / unlock screen (master password gate) -->
-  <div id="lock" class="lock">
+  <div id="lock" class="lock" style="display: none;">
     <div class="lock-card">
       <img class="lock-logo" src="./icons/icon-192.png" alt="Notex" width="72" height="72" />
       <h1>Notex</h1>
@@ -40,7 +64,8 @@
         <p id="auth-warn" class="lock-warn" hidden>⚠️ Şifreleme parolanı unutursan notların kurtarılamaz.</p>
         <p class="auth-switch">
           <a id="forgot-pass" href="#">Hesap parolamı unuttum</a> ·
-          <a id="use-local" href="#">Hesapsız kullan</a>
+          <a id="use-local" href="#">Hesapsız kullan</a> ·
+          <a id="back-home" href="#">← Ana sayfa</a>
         </p>
       </div>
 
