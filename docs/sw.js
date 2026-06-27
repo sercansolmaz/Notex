@@ -1,5 +1,5 @@
 // Notex service worker — app-shell offline cache.
-const CACHE = 'notex-v2';
+const CACHE = 'notex-v3';
 const ASSETS = [
   './',
   './index.html',

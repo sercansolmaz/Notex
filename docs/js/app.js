@@ -79,7 +79,7 @@ async function loadAll() {
 async function persist(note) {
   note.updatedAt = now();
   await db.put('notes', await vault.encryptNote(note));
-  if (cloudSession) pushItems([{ kind: 'note', obj: note }]); // fire-and-forget sync
+  if (cloudSession && autoSync) pushItems([{ kind: 'note', obj: note }]); // fire-and-forget sync
 }
 
 // Drop a note that was left completely empty (no title, no content) — keeps
@@ -122,7 +122,7 @@ async function createNote(content = '') {
 
   state.notes.push(note);
   await db.put('notes', await vault.encryptNote(note));
-  if (cloudSession) pushItems([{ kind: 'note', obj: note }]);
+  if (cloudSession && autoSync) pushItems([{ kind: 'note', obj: note }]);
   selectNote(note.id);
   renderFilters();
   renderSidebar();
@@ -175,6 +175,23 @@ function renderList() {
       `<div class="ni-preview">${escapeHTML(firstBodyLine(n))}</div>` +
       `<div class="ni-date">${relDate(n.updatedAt)}</div>`;
     li.addEventListener('click', () => navigateTo(n.id));
+    li.addEventListener('contextmenu', (e) => { e.preventDefault(); showNoteMenu(e.clientX, e.clientY, n); });
+    // Long-press → context menu (touch / mobile)
+    let lpTimer;
+    li.addEventListener('touchstart', (e) => {
+      const t = e.touches[0];
+      lpTimer = setTimeout(() => showNoteMenu(t.clientX, t.clientY, n), 500);
+    }, { passive: true });
+    li.addEventListener('touchend', () => clearTimeout(lpTimer));
+    li.addEventListener('touchmove', () => clearTimeout(lpTimer));
+    // Drag → drop onto a notebook / favorites / trash
+    li.draggable = true;
+    li.addEventListener('dragstart', (e) => {
+      e.dataTransfer.setData('text/plain', n.id);
+      e.dataTransfer.effectAllowed = 'move';
+      li.classList.add('dragging');
+    });
+    li.addEventListener('dragend', () => li.classList.remove('dragging'));
     ul.appendChild(li);
   }
   $('#count').textContent = `${notes.length} not`;
@@ -276,7 +293,8 @@ function renderSidebar() {
     li.addEventListener('click', () => setView('nb:' + nb.id));
     li.addEventListener('dblclick', () => renameNotebook(nb));
     li.addEventListener('contextmenu', (e) => { e.preventDefault(); deleteNotebook(nb); });
-    li.title = 'Tıkla: filtrele · Çift tık: yeniden adlandır · Sağ tık: sil';
+    li.title = 'Tıkla: filtrele · Çift tık: yeniden adlandır · Sağ tık: sil · Not sürükle: deftere taşı';
+    makeDropTarget(li, (noteId) => assignNoteToNotebook(noteId, nb.id));
     nbUl.appendChild(li);
   }
   $('#nb-empty').hidden = state.notebooks.length > 0;
@@ -539,6 +557,72 @@ function handleLinkClick(e) {
   else if (wiki) { createNote('# ' + wiki.dataset.link + '\n\n'); } // create-on-click
 }
 
+// ── Note context menu (right-click / long-press) + per-note actions ──
+function hideNoteMenu() { const m = $('#note-menu'); if (m) m.hidden = true; }
+
+function showNoteMenu(x, y, note) {
+  const m = $('#note-menu');
+  const items = note.isTrashed
+    ? [
+        { label: '↩️ Geri yükle', act: () => restoreNoteObj(note) },
+        { label: '✕ Kalıcı sil', danger: true, act: () => deleteNoteObj(note) },
+      ]
+    : [
+        { label: note.isPinned ? '📌 Sabiti kaldır' : '📌 Sabitle',
+          act: async () => { note.isPinned = !note.isPinned; await persist(note); renderList(); } },
+        { label: note.isFavorite ? '★ Favoriden çıkar' : '☆ Favorile',
+          act: async () => { note.isFavorite = !note.isFavorite; await persist(note); if (note.id === state.currentId) selectNote(note.id); renderList(); } },
+        { label: '🗑 Çöpe taşı', danger: true, act: () => trashNoteObj(note) },
+      ];
+  m.innerHTML = '';
+  for (const it of items) {
+    const b = document.createElement('button');
+    b.className = 'ctx-item' + (it.danger ? ' danger' : '');
+    b.textContent = it.label;
+    b.addEventListener('click', () => { hideNoteMenu(); it.act(); });
+    m.appendChild(b);
+  }
+  m.hidden = false;
+  const mw = 190, mh = items.length * 36 + 10;
+  m.style.left = Math.max(6, Math.min(x, window.innerWidth - mw - 8)) + 'px';
+  m.style.top = Math.max(6, Math.min(y, window.innerHeight - mh - 8)) + 'px';
+}
+
+async function trashNoteObj(note) {
+  note.isTrashed = true; note.isPinned = false;
+  await persist(note);
+  if (note.id === state.currentId) { state.currentId = null; $('#editor-pane').hidden = true; $('#empty-state').hidden = false; }
+  renderList();
+}
+async function restoreNoteObj(note) { note.isTrashed = false; await persist(note); renderList(); }
+async function deleteNoteObj(note) {
+  if (!confirm('Bu not kalıcı olarak silinecek. Emin misiniz?')) return;
+  if (cloudSession) await pushItems([{ kind: 'note', obj: note, deleted: true }]);
+  await db.remove('notes', note.id);
+  state.notes = state.notes.filter((x) => x.id !== note.id);
+  if (note.id === state.currentId) { state.currentId = null; $('#editor-pane').hidden = true; $('#empty-state').hidden = false; }
+  renderList();
+}
+
+async function assignNoteToNotebook(noteId, notebookId) {
+  const n = state.notes.find((x) => x.id === noteId); if (!n) return;
+  n.notebookId = notebookId; await persist(n);
+  renderSidebar(); renderList();
+  if (n.id === state.currentId) renderEditorMeta(n);
+}
+
+// Wire a drop target that performs `onDropNote(noteId)` on a dropped note.
+function makeDropTarget(el, onDropNote) {
+  if (!el) return;
+  el.addEventListener('dragover', (e) => { e.preventDefault(); el.classList.add('drop-target'); });
+  el.addEventListener('dragleave', () => el.classList.remove('drop-target'));
+  el.addEventListener('drop', (e) => {
+    e.preventDefault(); el.classList.remove('drop-target');
+    const id = e.dataTransfer.getData('text/plain');
+    if (id) onDropNote(id);
+  });
+}
+
 // ── Encrypted cloud sync (Supabase) ──
 function setSyncStatus(t) { if (cloudSession) $('#count').textContent = t; }
 
@@ -567,12 +651,10 @@ async function pushAllLocal() {
   for (let i = 0; i < entries.length; i += 50) await pushItems(entries.slice(i, i + 50));
 }
 
-async function fullSync() {
-  if (!cloudSession) return;
-  setSyncStatus('Senkronlanıyor…');
+async function pullMerge() {
   let remote;
   try { remote = await cloud.pull(cloudSession.token); }
-  catch (e) { setSyncStatus('Senkron hatası'); console.warn('pull failed', e); return; }
+  catch (e) { setSyncStatus('Senkron hatası'); console.warn('pull failed', e); return false; }
 
   for (const row of remote) {
     const obj = await vault.decryptObject({ id: row.id, c: row.ciphertext });
@@ -597,10 +679,70 @@ async function fullSync() {
       }
     }
   }
-  await pushAllLocal();
   renderSidebar();
   renderList();
-  setSyncStatus('Senkronlandı ✓');
+  return true;
+}
+
+async function fullSync() {
+  if (!cloudSession) return;
+  setSyncStatus('Senkronlanıyor…');
+  if (await pullMerge()) {
+    await pushAllLocal();
+    setSyncStatus('Senkronlandı ✓');
+  }
+}
+
+// ── Sync options (auto-sync, periodic pull, sign out, account menu) ──
+let autoSync = localStorage.getItem('notex.autosync') !== 'off';
+let syncTimer = null;
+
+function startAutoSync() {
+  clearInterval(syncTimer);
+  if (autoSync && cloudSession) {
+    // Periodic pull to pick up changes made on other devices (local edits push live).
+    syncTimer = setInterval(() => { if (cloudSession && autoSync) pullMerge(); }, 180000);
+  }
+}
+
+function setAutoSync(on) {
+  autoSync = on;
+  localStorage.setItem('notex.autosync', on ? 'on' : 'off');
+  startAutoSync();
+}
+
+function signOut() {
+  if (!confirm('Çıkış yapılsın mı? Bu cihazdaki yerel kopya silinir; notların bulutta güvende kalır.')) return;
+  clearKeyCache();
+  // Wipe the local cache so the next account starts clean on this device.
+  indexedDB.deleteDatabase('notex');
+  cloudSession = null;
+  location.reload();
+}
+
+function showAccountMenu(x, y) {
+  const m = $('#note-menu');
+  m.innerHTML = '';
+  const head = document.createElement('div');
+  head.className = 'ctx-head';
+  head.textContent = cloudSession ? cloudSession.email : '';
+  m.appendChild(head);
+  const items = [
+    { label: '🔄 Şimdi senkronla', act: () => fullSync() },
+    { label: (autoSync ? '☑' : '☐') + ' Otomatik senkron', act: () => setAutoSync(!autoSync) },
+    { label: '🚪 Çıkış yap', danger: true, act: () => signOut() },
+  ];
+  for (const it of items) {
+    const b = document.createElement('button');
+    b.className = 'ctx-item' + (it.danger ? ' danger' : '');
+    b.textContent = it.label;
+    b.addEventListener('click', () => { hideNoteMenu(); it.act(); });
+    m.appendChild(b);
+  }
+  m.hidden = false;
+  const mw = 200, mh = 4 * 38 + 12;
+  m.style.left = Math.max(6, Math.min(x, window.innerWidth - mw - 8)) + 'px';
+  m.style.top = Math.max(6, Math.min(y - mh, window.innerHeight - mh - 8)) + 'px';
 }
 
 // ── Encrypted backup file (export / import) ──
@@ -686,7 +828,13 @@ function wire() {
   $('#btn-delete').addEventListener('click', deleteForever);
   $('#btn-theme').addEventListener('click', toggleTheme);
   $('#btn-lock').addEventListener('click', () => { vault.lock(); location.reload(); });
+  $('#btn-back-list').addEventListener('click', () => document.getElementById('app').classList.remove('show-editor'));
   $('#btn-sync').addEventListener('click', fullSync);
+  $('#btn-account').addEventListener('click', (e) => {
+    e.stopPropagation();
+    const r = e.currentTarget.getBoundingClientRect();
+    showAccountMenu(r.left, r.top);
+  });
   $('#btn-backup').addEventListener('click', downloadBackup);
   $('#btn-restore-backup').addEventListener('click', () => $('#restore-file').click());
   $('#restore-file').addEventListener('change', (e) => {
@@ -703,6 +851,20 @@ function wire() {
 
   document.querySelectorAll('.filter').forEach((b) =>
     b.addEventListener('click', () => setView(b.dataset.view)));
+
+  // Drag a note onto Favoriler / Çöp
+  makeDropTarget(document.querySelector('.filter[data-view="favorites"]'), async (id) => {
+    const n = state.notes.find((x) => x.id === id); if (!n) return;
+    n.isFavorite = true; await persist(n); renderList(); if (n.id === state.currentId) selectNote(n.id);
+  });
+  makeDropTarget(document.querySelector('.filter[data-view="trash"]'), (id) => {
+    const n = state.notes.find((x) => x.id === id); if (n) trashNoteObj(n);
+  });
+
+  // Hide the note context menu on any outside interaction
+  document.addEventListener('click', hideNoteMenu);
+  document.addEventListener('scroll', hideNoteMenu, true);
+  window.addEventListener('resize', hideNoteMenu);
 
   // Notebooks & tags
   $('#add-notebook').addEventListener('click', createNotebook);
@@ -903,6 +1065,8 @@ async function enterCloud({ token, userId, email, encKey }) {
   $('#auth-pass').value = ''; $('#auth-enc').value = ''; $('#auth-enc2').value = '';
   await main();
   $('#btn-sync').hidden = false; // cloud is active → show "sync now"
+  $('#btn-account').hidden = false;
+  startAutoSync();
   await fullSync(); // pull cloud notes + push local ones
   // Brand-new account with nothing in the cloud → seed the welcome note now.
   if (state.notes.length === 0) {

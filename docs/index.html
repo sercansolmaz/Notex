@@ -8,7 +8,7 @@
   <link rel="manifest" href="./manifest.webmanifest" />
   <link rel="icon" href="./icons/icon-192.png" />
   <link rel="apple-touch-icon" href="./icons/icon-192.png" />
-  <link rel="stylesheet" href="./css/style.css?v=2" />
+  <link rel="stylesheet" href="./css/style.css?v=3" />
   <script>
     // Apply saved theme before paint (no flash).
     const t = localStorage.getItem('notex.theme');
@@ -127,6 +127,7 @@
         <button id="btn-theme" title="Tema değiştir">🌓</button>
         <button id="btn-lock" title="Kasayı kilitle">🔒</button>
         <button id="btn-sync" title="Şimdi senkronla (bulut)" hidden>🔄</button>
+        <button id="btn-account" title="Hesap & senkron seçenekleri" hidden>👤</button>
         <button id="btn-backup" title="Şifreli yedek indir (Dropbox/iCloud/Drive'a koyabilirsin)">💾</button>
         <button id="btn-restore-backup" title="Yedekten geri yükle">⬆️</button>
         <input id="restore-file" type="file" accept="application/json,.json" hidden />
@@ -143,6 +144,7 @@
 
       <section id="editor-pane" hidden>
         <div class="editor-bar">
+          <button id="btn-back-list" class="btn-back-list" title="Listeye dön">‹</button>
           <input id="title" class="title-input" placeholder="Başlık" />
           <div class="bar-actions">
             <button id="btn-format" title="Markdown ↔ Zengin metin">M↓ Markdown</button>
@@ -195,6 +197,8 @@
       </section>
     </main>
   </div>
+
+  <div id="note-menu" class="ctx-menu" hidden></div>
 
   <script type="module" src="./js/app.js"></script>
   <script>
