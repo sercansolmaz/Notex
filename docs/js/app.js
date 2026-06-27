@@ -69,7 +69,9 @@ async function loadAll() {
   state.notes = (await Promise.all(noteRecs.map((r) => vault.decryptNote(r)))).filter(Boolean);
   state.notebooks = (await Promise.all(nbRecs.map((r) => vault.decryptObject(r)))).filter(Boolean);
   state.tags = (await Promise.all(tagRecs.map((r) => vault.decryptObject(r)))).filter(Boolean);
-  if (state.notes.length === 0) {
+  // In cloud mode, let the upcoming fullSync populate first (avoids a duplicate
+  // welcome note on a new device); a brand-new account gets one after sync.
+  if (state.notes.length === 0 && !cloudSession) {
     await createNote(WELCOME);
   }
 }
@@ -901,6 +903,10 @@ async function enterCloud({ token, userId, email, encKey }) {
   await main();
   $('#btn-sync').hidden = false; // cloud is active → show "sync now"
   await fullSync(); // pull cloud notes + push local ones
+  // Brand-new account with nothing in the cloud → seed the welcome note now.
+  if (state.notes.length === 0) {
+    await createNote(WELCOME);
+  }
 }
 
 function boot() {
